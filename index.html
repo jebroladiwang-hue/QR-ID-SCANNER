@@ -1,1 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gate Check Prototype</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#14171c;--mut:#6b7280;--line:#e3e6ea;--accent:#2563eb;--ok:#16a34a;--no:#dc2626}
+*{box-sizing:border-box}
+body{margin:0 auto;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;max-width:480px;padding:14px}
+h1{font-size:18px;margin:4px 0 10px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tabs button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:10px;font-size:15px}
+.tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+button.b{padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:14px}
+button.p{background:var(--accent);color:#fff;border-color:var(--accent)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+video{width:100%;border-radius:12px;background:#000;aspect-ratio:1;object-fit:cover}
+.mut{color:var(--mut);font-size:13px}
+select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);font-size:15px}
+#qr{display:flex;justify-content:center;padding:10px;background:#fff;border-radius:12px}
+#qr svg{width:220px;height:220px}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:var(--accent);width:100%}
+.log div{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}
+.ok{color:var(--ok)}.no{color:var(--no)}
+#ov{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;z-index:9;color:#fff}
+#ov.ok{background:var(--ok)}#ov.no{background:var(--no)}
+.av{width:110px;height:110px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:700;margin-bottom:14px}
+#ov h2{font-size:34px;margin:0 0 6px}#ov p{margin:2px 0;font-size:18px}
+</style>
+</head>
+<body>
+<h1>🛂 Gate Check · Prototype</h1>
+<div class="tabs"><button id="t1" class="on" onclick="tab(1)">Guard scanner</button><button id="t2" onclick="tab(2)">Student app</button></div>
 
+<div id="v1">
+  <div class="card">
+    <video id="vid" playsinline muted></video>
+    <div class="grid" style="margin-top:10px">
+      <button class="b p" onclick="startCam()">Start camera</button>
+      <button class="b" onclick="stopCam()">Stop</button>
+    </div>
+    <p class="mut" id="camMsg">Camera needs permission. If it doesn't work, use the test buttons below.</p>
+  </div>
+  <div class="card">
+    <b>Test without a camera</b>
+    <div class="grid" style="margin-top:8px">
+      <button class="b" onclick="sim('valid')">✅ Valid student</button>
+      <button class="b" onclick="sim('susp')">⛔ Suspended</button>
+      <button class="b" onclick="sim('old')">⏱ Expired code</button>
+      <button class="b" onclick="sim('fake')">🕵️ Fake code</button>
+    </div>
+  </div>
+  <div class="card"><b>Entry log</b><div class="log" id="log"><span class="mut">No scans yet.</span></div></div>
+</div>
+
+<div id="v2" style="display:none">
+  <div class="card">
+    <select id="who" onchange="lock()"></select>
+    <button class="b p" style="width:100%;margin-top:10px" onclick="unlock()">👆 Unlock with fingerprint (simulated)</button>
+  </div>
+  <div class="card" id="qrCard" style="display:none">
+    <div id="qr"></div>
+    <div class="bar"><i id="fill"></i></div>
+    <p class="mut" id="cd" style="text-align:center"></p>
+    <p class="mut" style="text-align:center">Show this to the guard.</p>
+  </div>
+</div>
+
+<div id="ov" onclick="hide()"></div>
+
+<script>
+const SECRET="demo-secret-change-me", TTL=60, ROTATE=30;
+// EDIT THIS LIST: your own students
+const students=[
+ {id:"S1001",name:"Ana Reyes",cls:"Grade 11 · STEM",ok:true},
+ {id:"S1002",name:"Marco Santos",cls:"Grade 12 · ABM",ok:true},
+ {id:"S1003",name:"Liza Cruz",cls:"Grade 10 · A",ok:true},
+ {id:"S1004",name:"Ken Dela Paz",cls:"Grade 11 · HUMSS",ok:false}
+];
+const sig=s=>{let h=2166136261;for(const c of s+SECRET){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return(h>>>0).toString(36)};
+const mk=(id,ts=Date.now())=>`${id}.${ts}.${sig(id+ts)}`;
+
+function verify(code){
+  const p=String(code).split(".");
+  if(p.length!==3) return {ok:false,why:"Not a valid student QR"};
+  const [id,ts,s]=p;
+  if(sig(id+ts)!==s) return {ok:false,why:"Fake or tampered code"};
+  if(Date.now()-Number(ts)>TTL*1000) return {ok:false,why:"Code expired. Ask student to refresh."};
+  const st=students.find(x=>x.id===id);
+  if(!st) return {ok:false,why:"Student not found"};
+  if(!st.ok) return {ok:false,why:"Entry not allowed (suspended)",st};
+  return {ok:true,st};
+}
+
+const logEl=document.getElementById("log"),ov=document.getElementById("ov");
+let busy=false;
+function handle(code){
+  if(busy) return; busy=true;
+  const r=verify(code), t=new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit",second:"2-digit"});
+  const nm=r.st?r.st.name:"Unknown";
+  if(logEl.querySelector("span")) logEl.innerHTML="";
+  logEl.insertAdjacentHTML("afterbegin",`<div><span>${nm}</span><span class="${r.ok?'ok':'no'}">${r.ok?'IN':'DENIED'} · ${t}</span></div>`);
+  ov.className=r.ok?"ok":"no"; ov.style.display="flex";
+  const ini=r.st?r.st.name.split(" ").map(w=>w[0]).join(""):"?";
+  ov.innerHTML=`<div class="av">${ini}</div><h2>${r.ok?"VERIFIED":"DENIED"}</h2>`+(r.st?`<p><b>${r.st.name}</b></p><p>${r.st.cls}</p>`:"")+(r.ok?"":`<p>${r.why}</p>`)+`<p style="margin-top:20px;opacity:.8;font-size:14px">Tap to continue</p>`;
+  if(navigator.vibrate) navigator.vibrate(r.ok?80:[120,60,120]);
+  setTimeout(hide,3500);
+}
+function hide(){ov.style.display="none";setTimeout(()=>busy=false,300)}
+function sim(k){
+  const c={valid:mk("S1001"),susp:mk("S1004"),old:mk("S1002",Date.now()-120000),fake:"S1001."+Date.now()+".abc123"}[k];
+  handle(c);
+}
+
+let stream=null,raf=null;
+const vid=document.getElementById("vid"),cv=document.createElement("canvas"),cx=cv.getContext("2d",{willReadFrequently:true});
+async function startCam(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+    vid.srcObject=stream; await vid.play();
+    document.getElementById("camMsg").textContent="Scanning…";
+    loop();
+  }catch(e){document.getElementById("camMsg").textContent="Camera unavailable here ("+e.name+"). Use the test buttons."}
+}
+function stopCam(){cancelAnimationFrame(raf);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;vid.srcObject=null}
+function loop(){
+  if(vid.readyState>=2&&!busy){
+    cv.width=vid.videoWidth;cv.height=vid.videoHeight;cx.drawImage(vid,0,0);
+    const d=cx.getImageData(0,0,cv.width,cv.height),q=jsQR(d.data,d.width,d.height);
+    if(q&&q.data) handle(q.data);
+  }
+  raf=requestAnimationFrame(loop);
+}
+
+const who=document.getElementById("who");
+students.forEach(s=>who.insertAdjacentHTML("beforeend",`<option value="${s.id}">${s.name} (${s.id})</option>`));
+let timer=null,start=0;
+function lock(){clearInterval(timer);document.getElementById("qrCard").style.display="none"}
+function unlock(){
+  // Real app: call the phone's biometric API here. Simulated for the prototype.
+  if(!confirm("Simulated fingerprint scan. Match?")) return;
+  document.getElementById("qrCard").style.display="block";render();
+  clearInterval(timer);timer=setInterval(tick,200);
+}
+function render(){
+  const q=qrcode(0,"M");q.addData(mk(who.value));q.make();
+  document.getElementById("qr").innerHTML=q.createSvgTag({cellSize:4,margin:0,scalable:true});
+  start=Date.now();
+}
+function tick(){
+  const el=(Date.now()-start)/1000;
+  if(el>=ROTATE){render();return}
+  document.getElementById("fill").style.width=(100-el/ROTATE*100)+"%";
+  document.getElementById("cd").textContent="Refreshes in "+Math.ceil(ROTATE-el)+"s";
+}
+function tab(n){
+  document.getElementById("v1").style.display=n==1?"block":"none";
+  document.getElementById("v2").style.display=n==2?"block":"none";
+  document.getElementById("t1").className=n==1?"on":"";document.getElementById("t2").className=n==2?"on":"";
+  if(n==2) stopCam();
+}
+</script>
+</body>
+</html>
