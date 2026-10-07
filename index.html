@@ -77,10 +77,10 @@ select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);b
 const SECRET="demo-secret-change-me", TTL=60, ROTATE=30;
 // EDIT THIS LIST: your own students
 const students=[
- {id:"S1001",name:"Ana Reyes",cls:"Grade 11 · STEM",ok:true},
- {id:"S1002",name:"Marco Santos",cls:"Grade 12 · ABM",ok:true},
- {id:"S1003",name:"Liza Cruz",cls:"Grade 10 · A",ok:true},
- {id:"S1004",name:"Ken Dela Paz",cls:"Grade 11 · HUMSS",ok:false}
+ {id:"103927140041",name:"Benito, Kizeah C.",cls:"TVL-ICT 12-I",ok:true},
+ {id:"103927140042",name:"Sample Classmate 1",cls:"TVL-ICT 12-I",ok:true},
+ {id:"103927140043",name:"Sample Classmate 2",cls:"TVL-ICT 12-I",ok:true},
+ {id:"103927140044",name:"Sample Suspended",cls:"TVL-ICT 12-I",ok:false}
 ];
 const sig=s=>{let h=2166136261;for(const c of s+SECRET){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return(h>>>0).toString(36)};
 const mk=(id,ts=Date.now())=>`${id}.${ts}.${sig(id+ts)}`;
