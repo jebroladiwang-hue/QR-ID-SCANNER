@@ -1,6 +1,7 @@
 {
   "name": "Gate Check",
   "short_name": "Gate Check",
+  "id": "/QR-ID-SCANNER/",
   "description": "QR ID scanner for gate entry verification.",
   "start_url": "./",
   "scope": "./",
